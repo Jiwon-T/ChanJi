@@ -676,7 +676,11 @@ export default function App() {
           )}
 
           {activeTab === 'settings' && profile && (
-            <SettingsView profile={profile} onSignOut={logOut} />
+            <SettingsView 
+              profile={profile} 
+              onSignOut={logOut} 
+              onImageAction={(field) => setImageAction({ field })}
+            />
           )}
 
           {activeTab === 'dday' && profile && (
@@ -1552,7 +1556,11 @@ function MemoryEditor({ date, profile, existingMemory }: { date: string, profile
   );
 }
 
-function SettingsView({ profile, onSignOut }: { profile: Profile, onSignOut: () => void }) {
+function SettingsView({ profile, onSignOut, onImageAction }: { 
+  profile: Profile, 
+  onSignOut: () => void,
+  onImageAction: (field: 'partner1Image' | 'partner2Image' | 'coverImage') => void
+}) {
   const [partner1, setPartner1] = useState(profile.partner1);
   const [partner2, setPartner2] = useState(profile.partner2);
   const [startDate, setStartDate] = useState(profile.startDate);
@@ -1574,47 +1582,6 @@ function SettingsView({ profile, onSignOut }: { profile: Profile, onSignOut: () 
       setSaving(false);
     }
   };
-
-  const updateTextField = async (field: 'frameHeadline' | 'frameDate' | 'frameQuote', current: string) => {
-    if (!profile) return;
-    const newVal = prompt('수정할 내용을 입력해주세요:', current);
-    if (newVal === null || newVal === current) return;
-    try {
-      await updateDoc(doc(db, 'couples', profile.id), {
-        [field]: newVal,
-        updatedAt: serverTimestamp()
-      });
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const updateImage = async (field: 'partner1Image' | 'partner2Image' | 'coverImage') => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'image/*';
-    input.onchange = async (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (file) {
-        setSaving(true);
-        try {
-          const compressed = await compressImage(file);
-          await updateDoc(doc(db, 'couples', profile.id), {
-            [field]: compressed,
-            updatedAt: serverTimestamp()
-          });
-        } catch (error) {
-          console.error("Image upload error:", error);
-          alert("이미지 업로드 중 오류가 발생했습니다.");
-        } finally {
-          setSaving(false);
-        }
-      }
-    };
-    input.click();
-  };
-
-  const updateCoverImage = () => updateImage('coverImage');
 
   return (
     <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="pt-4 space-y-8">
@@ -1638,7 +1605,7 @@ function SettingsView({ profile, onSignOut }: { profile: Profile, onSignOut: () 
       </div>
 
       <button 
-        onClick={() => updateImage('coverImage')}
+        onClick={() => onImageAction('coverImage')}
         className="w-full aspect-[2/1] rounded-3xl overflow-hidden glass border-2 border-dashed border-border-point flex flex-col items-center justify-center text-text-hint hover:border-btn-secondary transition-all group"
       >
         {profile.coverImage ? (
@@ -1652,14 +1619,14 @@ function SettingsView({ profile, onSignOut }: { profile: Profile, onSignOut: () 
       </button>
 
       <div className="flex items-center gap-4">
-        <button onClick={() => updateImage('partner1Image')} className="flex-1 flex flex-col items-center gap-2">
+        <button onClick={() => onImageAction('partner1Image')} className="flex-1 flex flex-col items-center gap-2">
           <div className="w-20 h-20 rounded-full border-4 border-white dreamy-shadow overflow-hidden bg-surface-card">
             {profile.partner1Image ? <img src={profile.partner1Image} className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : <Plus className="m-auto text-text-hint" />}
           </div>
           <span className="text-xs text-text-hint font-medium">{profile.partner1} 사진</span>
         </button>
         <Heart className="w-6 h-6 text-icon-bg" />
-        <button onClick={() => updateImage('partner2Image')} className="flex-1 flex flex-col items-center gap-2">
+        <button onClick={() => onImageAction('partner2Image')} className="flex-1 flex flex-col items-center gap-2">
           <div className="w-20 h-20 rounded-full border-4 border-white dreamy-shadow overflow-hidden bg-surface-card">
             {profile.partner2Image ? <img src={profile.partner2Image} className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : <Plus className="m-auto text-text-hint" />}
           </div>
