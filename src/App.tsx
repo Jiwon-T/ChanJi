@@ -287,10 +287,14 @@ export default function App() {
           unsubOwn = onSnapshot(ownRef, (snap) => {
             if (snap.exists()) setProfile({ id: snap.id, ...snap.data() } as Profile);
             else setProfile(null);
+          }, (err) => {
+            handleFirestoreError(err, OperationType.GET, `couples/${user.uid}`);
           });
         }
       }
       setLoading(false);
+    }, (err) => {
+      handleFirestoreError(err, OperationType.LIST, 'couples');
     });
     return () => { unsubList(); if (unsubOwn) unsubOwn(); };
   }, [user]);
@@ -304,6 +308,8 @@ export default function App() {
     return onSnapshot(q, (snap) => {
       const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as CoupleNotification));
       setNotifications(list.sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0)));
+    }, (err) => {
+      handleFirestoreError(err, OperationType.LIST, `couples/${profile.id}/notifications`);
     });
   }, [profile, user]);
 
@@ -314,6 +320,8 @@ export default function App() {
     return onSnapshot(q, (snap) => {
       if (!snap.empty) setTodayMemory({ id: snap.docs[0].id, ...snap.docs[0].data() } as Memory);
       else setTodayMemory(null);
+    }, (err) => {
+      handleFirestoreError(err, OperationType.GET, `couples/${profile.id}/memories (today)`);
     });
   }, [profile]);
 
@@ -881,6 +889,8 @@ function DDayView({ profile }: { profile: Profile }) {
     return onSnapshot(q, (snap) => {
       const annivs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as CustomAnniversary));
       setCustomAnniversaries(annivs);
+    }, (err) => {
+      handleFirestoreError(err, OperationType.LIST, `couples/${profile.id}/anniversaries`);
     });
   }, [profile.id]);
 
@@ -1119,7 +1129,7 @@ function MemoryCalendar({ profile, selectedDate, setSelectedDate, currentMonth, 
       setMemories(mems);
       setLoading(false);
     }, (error) => {
-      console.error("Memories snapshot error:", error);
+      handleFirestoreError(error, OperationType.LIST, `couples/${coupleId}/memories (all)`);
       setLoading(false);
     });
 
@@ -1584,11 +1594,11 @@ function SettingsView({ profile, onSignOut, onImageAction }: {
   };
 
   return (
-    <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="pt-4 space-y-8">
+    <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="pt-4 space-y-8 pb-10">
       {/* Invite Code Section */}
       <div className="bg-btn-primary text-white p-6 rounded-3xl shadow-lg relative overflow-hidden">
         <div className="absolute -top-4 -right-4 w-20 h-20 bg-white/20 rounded-full blur-xl" />
-        <h3 className="text-xs font-bold uppercase tracking-widest opacity-80 mb-2">상대방 초대 코드</h3>
+        <h3 className="text-xs font-bold uppercase tracking-widest opacity-80 mb-2">나의 초대 코드</h3>
         <div className="flex items-center justify-between gap-4">
           <code className="text-xl font-bold bg-white/20 px-3 py-1 rounded-lg flex-1 overflow-hidden text-ellipsis">{profile.id}</code>
           <button 
@@ -1601,8 +1611,89 @@ function SettingsView({ profile, onSignOut, onImageAction }: {
             COPY
           </button>
         </div>
-        <p className="text-[10px] mt-2 opacity-70">이 코드를 상대방 앱의 '참가하기' 칸에 입력해주세요.</p>
+        <p className="text-[10px] mt-2 opacity-70">상대방이 이 코드를 입력하면 둘만의 공간이 연결됩니다.</p>
       </div>
+
+      {/* Join Another Couple Section */}
+      {profile.members.length < 2 && (
+        <div className="glass p-6 rounded-3xl border-2 border-accent-impact/20 space-y-4">
+          <div className="flex items-center gap-2 mb-2">
+            <UserIcon size={16} className="text-accent-impact" />
+            <h3 className="text-sm font-bold text-text-primary">상대방의 공간으로 합치기</h3>
+          </div>
+          <p className="text-[11px] text-text-hint leading-relaxed">
+            이미 상대방이 계정을 만들었다면, 상대방의 초대 코드를 입력해 그 공간으로 이동할 수 있습니다. 
+            <span className="text-btn-primary font-bold">(현재 나의 기록은 사라집니다)</span>
+          </p>
+          <div className="flex gap-2">
+            <input 
+              id="settings-join-code"
+              placeholder="상대방 초대 코드" 
+              className="flex-1 bg-white border border-divider rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-border-point text-sm" 
+            />
+            <button
+              onClick={async () => {
+                const code = (document.getElementById('settings-join-code') as HTMLInputElement).value.trim();
+                if (!code) return alert('코드를 입력해주세요!');
+                if (code === profile.id) return alert('자신의 코드는 입력할 수 없습니다.');
+                
+                try {
+                  const snap = await getDoc(doc(db, 'couples', code)).catch(err => {
+                    handleFirestoreError(err, OperationType.GET, `couples/${code}`);
+                    throw err;
+                  });
+                  
+                  if (!snap.exists()) return alert('유효하지 않은 코드입니다.');
+                  
+                  const data = snap.data();
+                  if (data.members.length >= 2) return alert('이미 해당 공간의 인원이 가득 찼습니다.');
+                  
+                  if (!confirm('상대방의 공간으로 합쳐지면 현재의 기록은 더 이상 볼 수 없습니다. 계속하시겠습니까?')) return;
+
+                  setSaving(true);
+                  
+                  // 1. Join the new couple
+                  await updateDoc(doc(db, 'couples', code), {
+                    members: [...data.members, auth.currentUser?.uid],
+                    updatedAt: serverTimestamp()
+                  }).catch(err => {
+                    handleFirestoreError(err, OperationType.UPDATE, `couples/${code}`);
+                    throw err;
+                  });
+
+                  // 2. Cleanup current solo space
+                  if (profile.id === auth.currentUser?.uid) {
+                    await deleteDoc(doc(db, 'couples', profile.id)).catch(err => {
+                      handleFirestoreError(err, OperationType.DELETE, `couples/${profile.id}`);
+                      throw err;
+                    });
+                  } else {
+                    // Remove self from current members if not owner
+                    await updateDoc(doc(db, 'couples', profile.id), {
+                      members: profile.members.filter(m => m !== auth.currentUser?.uid),
+                      updatedAt: serverTimestamp()
+                    }).catch(err => {
+                      handleFirestoreError(err, OperationType.UPDATE, `couples/${profile.id}`);
+                      throw err;
+                    });
+                  }
+
+                  alert('성공적으로 합쳐졌습니다!');
+                  window.location.reload(); // Force refresh to re-init listeners cleanly
+                } catch (e) {
+                  console.error(e);
+                  alert('참가를 완료할 수 없습니다. 코드 혹은 권한을 확인해주세요.');
+                } finally {
+                  setSaving(false);
+                }
+              }}
+              className="bg-accent-impact text-white px-6 rounded-xl font-bold text-sm shadow-lg shadow-accent-impact/20"
+            >
+              JOIN
+            </button>
+          </div>
+        </div>
+      )}
 
       <button 
         onClick={() => onImageAction('coverImage')}

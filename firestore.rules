@@ -13,11 +13,27 @@ service cloud.firestore {
     }
 
     function isMember(coupleId) {
-      return isSignedIn() && (request.auth.uid in resource.data.get('members', []) || request.auth.uid == coupleId);
+      return isSignedIn() && (
+        (resource != null && request.auth.uid in resource.data.get('members', [])) || 
+        request.auth.uid == coupleId
+      );
+    }
+
+    function canJoin(coupleId) {
+      return isSignedIn() && 
+             isValidId(coupleId) &&
+             resource != null &&
+             resource.data.get('members', []).size() == 1 &&
+             incoming().get('members', []).size() == 2 &&
+             incoming().get('members', []).hasAll(resource.data.get('members', [])) &&
+             request.auth.uid in incoming().get('members', []);
     }
 
     function isMemberIncoming(coupleId) {
-      return isSignedIn() && (request.auth.uid in incoming().get('members', []) || request.auth.uid == coupleId);
+      return isSignedIn() && (
+        (request.resource != null && request.auth.uid in request.resource.data.get('members', [])) || 
+        request.auth.uid == coupleId
+      );
     }
 
     function isValidId(id) {
@@ -56,43 +72,42 @@ service cloud.firestore {
     }
 
     match /couples/{coupleId} {
-      allow list: if isSignedIn() && request.auth.uid in resource.data.get('members', []);
-      allow get: if isSignedIn() && isMember(coupleId) && isValidId(coupleId);
-      allow create: if isSignedIn() && isMemberIncoming(coupleId) && isValidId(coupleId) && isValidProfile(incoming()) && incoming().updatedAt == request.time;
-      allow update: if isSignedIn() && isMember(coupleId) && isValidId(coupleId) && isValidProfile(incoming()) && (
-        incoming().diff(existing()).affectedKeys().hasOnly(['partner1', 'partner2', 'startDate', 'members', 'coverImage', 'partner1Image', 'partner2Image', 'frameHeadline', 'frameDate', 'frameQuote', 'updatedAt']) &&
+      function isParentMemberLocal(cid) {
+        let parentPath = /databases/$(database)/documents/couples/$(cid);
+        return exists(parentPath) && (
+          request.auth.uid in get(parentPath).data.get('members', []) || 
+          request.auth.uid == cid
+        );
+      }
+
+      allow list: if isSignedIn() && (resource != null && request.auth.uid in resource.data.get('members', []));
+      allow get: if isSignedIn() && (isMember(coupleId) || isValidId(coupleId)); 
+      allow create: if isSignedIn() && isMemberIncoming(coupleId) && isValidId(coupleId) && isValidProfile(incoming());
+      allow update: if isSignedIn() && (isMember(coupleId) || canJoin(coupleId)) && isValidId(coupleId) && isValidProfile(incoming()) && (
+        incoming().diff(resource.data).affectedKeys().hasOnly(['partner1', 'partner2', 'startDate', 'members', 'coverImage', 'partner1Image', 'partner2Image', 'frameHeadline', 'frameDate', 'frameQuote', 'updatedAt']) &&
         incoming().updatedAt == request.time
       );
+      allow delete: if isSignedIn() && request.auth.uid == coupleId;
 
       match /memories/{memoryId} {
-        function isParentMember(cid) {
-          let parentPath = /databases/$(database)/documents/couples/$(cid);
-          return exists(parentPath) && (request.auth.uid in get(parentPath).data.get('members', []) || request.auth.uid == cid);
-        }
-
-        allow list: if isSignedIn() && isParentMember(coupleId);
-        allow get: if isSignedIn() && isParentMember(coupleId) && isValidId(memoryId);
-        allow create: if isSignedIn() && isParentMember(coupleId) && isValidId(memoryId) && 
+        allow list: if isSignedIn() && isParentMemberLocal(coupleId);
+        allow get: if isSignedIn() && isParentMemberLocal(coupleId) && isValidId(memoryId);
+        allow create: if isSignedIn() && isParentMemberLocal(coupleId) && isValidId(memoryId) && 
                          isValidMemory(incoming()) && 
                          incoming().userId == request.auth.uid &&
                          incoming().createdAt == request.time &&
                          incoming().updatedAt == request.time;
-        allow update: if isSignedIn() && isParentMember(coupleId) && isValidId(memoryId) && 
+        allow update: if isSignedIn() && isParentMemberLocal(coupleId) && isValidId(memoryId) && 
                          isValidMemory(incoming()) && (
-          incoming().diff(existing()).affectedKeys().hasOnly(['title', 'content', 'images', 'updatedAt']) &&
+          incoming().diff(resource.data).affectedKeys().hasOnly(['title', 'content', 'images', 'updatedAt']) &&
           incoming().updatedAt == request.time &&
-          incoming().createdAt == existing().createdAt &&
-          incoming().userId == existing().userId
+          incoming().createdAt == resource.data.createdAt &&
+          incoming().userId == resource.data.userId
         );
-        allow delete: if isSignedIn() && isParentMember(coupleId) && isValidId(memoryId);
+        allow delete: if isSignedIn() && isParentMemberLocal(coupleId) && isValidId(memoryId);
       }
 
       match /anniversaries/{anniversaryId} {
-        function isParentMember(cid) {
-          let parentPath = /databases/$(database)/documents/couples/$(cid);
-          return exists(parentPath) && (request.auth.uid in get(parentPath).data.get('members', []) || request.auth.uid == cid);
-        }
-
         function isValidAnniversary(data) {
           return data.keys().hasAll(['label', 'date', 'userId', 'createdAt']) &&
                  data.keys().size() == 4 &&
@@ -101,20 +116,15 @@ service cloud.firestore {
                  data.userId is string;
         }
 
-        allow list: if isSignedIn() && isParentMember(coupleId);
-        allow create: if isSignedIn() && isParentMember(coupleId) && isValidId(anniversaryId) && 
+        allow list: if isSignedIn() && isParentMemberLocal(coupleId);
+        allow create: if isSignedIn() && isParentMemberLocal(coupleId) && isValidId(anniversaryId) && 
                          isValidAnniversary(incoming()) && 
                          incoming().userId == request.auth.uid &&
                          incoming().createdAt == request.time;
-        allow delete: if isSignedIn() && isParentMember(coupleId) && isValidId(anniversaryId);
+        allow delete: if isSignedIn() && isParentMemberLocal(coupleId) && isValidId(anniversaryId);
       }
 
       match /notifications/{notificationId} {
-        function isParentMember(cid) {
-          let parentPath = /databases/$(database)/documents/couples/$(cid);
-          return exists(parentPath) && (request.auth.uid in get(parentPath).data.get('members', []) || request.auth.uid == cid);
-        }
-
         function isValidNotification(data) {
           return data.keys().hasAll(['type', 'title', 'message', 'userId', 'read', 'createdAt']) &&
                  data.keys().size() == 6 &&
@@ -125,14 +135,14 @@ service cloud.firestore {
                  data.read is bool;
         }
 
-        allow list: if isSignedIn() && isParentMember(coupleId);
-        allow create: if isSignedIn() && isParentMember(coupleId) && isValidId(notificationId) && 
+        allow list: if isSignedIn() && isParentMemberLocal(coupleId);
+        allow create: if isSignedIn() && isParentMemberLocal(coupleId) && isValidId(notificationId) && 
                          isValidNotification(incoming()) && 
                          incoming().createdAt == request.time;
-        allow update: if isSignedIn() && isParentMember(coupleId) && 
-                         incoming().diff(existing()).affectedKeys().hasOnly(['read']) &&
+        allow update: if isSignedIn() && isParentMemberLocal(coupleId) && 
+                         incoming().diff(resource.data).affectedKeys().hasOnly(['read']) &&
                          isValidNotification(incoming());
-        allow delete: if isSignedIn() && isParentMember(coupleId);
+        allow delete: if isSignedIn() && isParentMemberLocal(coupleId);
       }
     }
   }
