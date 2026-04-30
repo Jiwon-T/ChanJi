@@ -1,0 +1,139 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isMember(coupleId) {
+      return isSignedIn() && (request.auth.uid in resource.data.get('members', []) || request.auth.uid == coupleId);
+    }
+
+    function isMemberIncoming(coupleId) {
+      return isSignedIn() && (request.auth.uid in incoming().get('members', []) || request.auth.uid == coupleId);
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Memory Validation
+    function isValidMemory(data) {
+      return data.keys().hasAll(['date', 'userId', 'content', 'images', 'authorName', 'authorImage', 'createdAt', 'updatedAt']) &&
+             (data.keys().size() == 8 || (data.keys().size() == 9 && data.keys().hasAll(['title']))) &&
+             data.date is string &&
+             data.userId is string &&
+             data.authorName is string &&
+             (data.authorImage == null || data.authorImage is string) &&
+             data.content is string &&
+             data.images is list &&
+             (!('title' in data) || data.title is string);
+    }
+
+    // Profile Validation
+    function isValidProfile(data) {
+      return data.keys().hasAll(['partner1', 'partner2', 'startDate', 'members', 'updatedAt']) &&
+             data.partner1 is string && data.partner1.size() <= 100 &&
+             data.partner2 is string && data.partner2.size() <= 100 &&
+             data.startDate is string &&
+             data.members is list &&
+             (data.updatedAt == request.time || data.updatedAt == null); // Allow null if not set yet, though App sets it
+    }
+
+    match /couples/{coupleId} {
+      allow list: if isSignedIn() && request.auth.uid in resource.data.get('members', []);
+      allow get: if isSignedIn() && isMember(coupleId) && isValidId(coupleId);
+      allow create: if isSignedIn() && isMemberIncoming(coupleId) && isValidId(coupleId) && isValidProfile(incoming()) && incoming().updatedAt == request.time;
+      allow update: if isSignedIn() && isMember(coupleId) && isValidId(coupleId) && isValidProfile(incoming()) && (
+        incoming().diff(existing()).affectedKeys().hasOnly(['partner1', 'partner2', 'startDate', 'members', 'coverImage', 'partner1Image', 'partner2Image', 'frameHeadline', 'frameDate', 'frameQuote', 'updatedAt']) &&
+        incoming().updatedAt == request.time
+      );
+
+      match /memories/{memoryId} {
+        function isParentMember(cid) {
+          let parentPath = /databases/$(database)/documents/couples/$(cid);
+          return exists(parentPath) && (request.auth.uid in get(parentPath).data.get('members', []) || request.auth.uid == cid);
+        }
+
+        allow list: if isSignedIn() && isParentMember(coupleId);
+        allow get: if isSignedIn() && isParentMember(coupleId) && isValidId(memoryId);
+        allow create: if isSignedIn() && isParentMember(coupleId) && isValidId(memoryId) && 
+                         isValidMemory(incoming()) && 
+                         incoming().userId == request.auth.uid &&
+                         incoming().createdAt == request.time &&
+                         incoming().updatedAt == request.time;
+        allow update: if isSignedIn() && isParentMember(coupleId) && isValidId(memoryId) && 
+                         isValidMemory(incoming()) && (
+          incoming().diff(existing()).affectedKeys().hasOnly(['title', 'content', 'images', 'updatedAt']) &&
+          incoming().updatedAt == request.time &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().userId == existing().userId
+        );
+        allow delete: if isSignedIn() && isParentMember(coupleId) && isValidId(memoryId);
+      }
+
+      match /anniversaries/{anniversaryId} {
+        function isParentMember(cid) {
+          let parentPath = /databases/$(database)/documents/couples/$(cid);
+          return exists(parentPath) && (request.auth.uid in get(parentPath).data.get('members', []) || request.auth.uid == cid);
+        }
+
+        function isValidAnniversary(data) {
+          return data.keys().hasAll(['label', 'date', 'userId', 'createdAt']) &&
+                 data.keys().size() == 4 &&
+                 data.label is string && data.label.size() <= 100 &&
+                 data.date is string &&
+                 data.userId is string;
+        }
+
+        allow list: if isSignedIn() && isParentMember(coupleId);
+        allow create: if isSignedIn() && isParentMember(coupleId) && isValidId(anniversaryId) && 
+                         isValidAnniversary(incoming()) && 
+                         incoming().userId == request.auth.uid &&
+                         incoming().createdAt == request.time;
+        allow delete: if isSignedIn() && isParentMember(coupleId) && isValidId(anniversaryId);
+      }
+
+      match /notifications/{notificationId} {
+        function isParentMember(cid) {
+          let parentPath = /databases/$(database)/documents/couples/$(cid);
+          return exists(parentPath) && (request.auth.uid in get(parentPath).data.get('members', []) || request.auth.uid == cid);
+        }
+
+        function isValidNotification(data) {
+          return data.keys().hasAll(['type', 'title', 'message', 'userId', 'read', 'createdAt']) &&
+                 data.keys().size() == 6 &&
+                 data.type in ['memory_saved', 'anniversary_added'] &&
+                 data.title is string &&
+                 data.message is string &&
+                 data.userId is string &&
+                 data.read is bool;
+        }
+
+        allow list: if isSignedIn() && isParentMember(coupleId);
+        allow create: if isSignedIn() && isParentMember(coupleId) && isValidId(notificationId) && 
+                         isValidNotification(incoming()) && 
+                         incoming().createdAt == request.time;
+        allow update: if isSignedIn() && isParentMember(coupleId) && 
+                         incoming().diff(existing()).affectedKeys().hasOnly(['read']) &&
+                         isValidNotification(incoming());
+        allow delete: if isSignedIn() && isParentMember(coupleId);
+      }
+    }
+  }
+}

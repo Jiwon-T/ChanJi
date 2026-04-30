@@ -1,0 +1,84 @@
+{
+  "entities": {
+    "Profile": {
+      "title": "Couple Profile",
+      "description": "Stores the relationship start date and couple names",
+      "type": "object",
+      "properties": {
+        "partner1": { "type": "string" },
+        "partner2": { "type": "string" },
+        "startDate": { "type": "string", "format": "date" },
+        "members": { "type": "array", "items": { "type": "string" } },
+        "coverImage": { "type": "string" },
+        "partner1Image": { "type": "string" },
+        "partner2Image": { "type": "string" },
+        "frameHeadline": { "type": "string" },
+        "frameDate": { "type": "string" },
+        "frameQuote": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["partner1", "partner2", "startDate"]
+    },
+    "Memory": {
+      "title": "Diary/Album Entry",
+      "description": "A record of a specific day's memories and photos",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string", "format": "date" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "images": { "type": "array", "items": { "type": "string" } },
+        "userId": { "type": "string" },
+        "authorName": { "type": "string" },
+        "authorImage": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["date", "userId"]
+    },
+    "Anniversary": {
+      "title": "Custom Anniversary",
+      "description": "A user-created special date to track",
+      "type": "object",
+      "properties": {
+        "label": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "userId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["label", "date", "userId"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "A notification for the user about app activities",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["memory_saved", "anniversary_added"] },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "userId": { "type": "string" },
+        "read": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["type", "title", "message", "userId", "read", "createdAt"]
+    }
+  },
+  "firestore": {
+    "couples/{coupleId}": {
+      "schema": "Profile",
+      "description": "The main profile for a couple"
+    },
+    "couples/{coupleId}/memories/{memoryId}": {
+      "schema": "Memory",
+      "description": "Memories recorded by the couple"
+    },
+    "couples/{coupleId}/anniversaries/{anniversaryId}": {
+      "schema": "Anniversary",
+      "description": "Custom anniversaries for the couple"
+    },
+    "couples/{coupleId}/notifications/{notificationId}": {
+      "schema": "Notification",
+      "description": "Notifications for the couple"
+    }
+  }
+}
