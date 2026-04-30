@@ -296,10 +296,10 @@ export default function App() {
   }, [user]);
 
   useEffect(() => {
-    if (!profile) return;
+    if (!profile || !user) return;
     const q = query(
       collection(db, 'couples', profile.id, 'notifications'),
-      where('userId', '==', user?.uid)
+      where('userId', '==', user.uid)
     );
     return onSnapshot(q, (snap) => {
       const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as CoupleNotification));
