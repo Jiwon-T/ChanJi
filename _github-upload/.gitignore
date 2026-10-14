@@ -1,0 +1,14 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+
+# 청첩장 원본 사진 (앱에서 업로드해 Firestore에 보관)
+invitation-photos/
+
+# GitHub 업로드용 임시 폴더
+_github-upload/

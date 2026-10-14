@@ -6,3 +6,7 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# 청첩장 원본 사진 (앱에서 업로드해 Firestore에 보관)
+invitation-photos/
+

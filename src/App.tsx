@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { doc, onSnapshot, setDoc, serverTimestamp, getDoc, updateDoc, collection, query, where, getDocs, addDoc, deleteDoc } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc, serverTimestamp, getDoc, updateDoc, collection, query, where, getDocs, addDoc, deleteDoc, limit, orderBy, startAfter, QueryDocumentSnapshot } from 'firebase/firestore';
 import { auth, db, signIn, logOut, OperationType, handleFirestoreError } from './lib/firebase.ts';
 import { Profile, Memory, CustomAnniversary, CoupleNotification } from './types.ts';
-import { Heart, Calendar as CalendarIcon, Settings, LogOut, Menu, X, Plus, Camera, Trash2, ChevronLeft, ChevronRight, User as UserIcon, Bell, Sparkles } from 'lucide-react';
+import { Heart, Calendar as CalendarIcon, Settings, LogOut, Menu, X, Plus, Camera, Trash2, ChevronLeft, ChevronRight, User as UserIcon, Bell, Sparkles, Mail } from 'lucide-react';
+import WeddingInvitation from './invitation/WeddingInvitation.tsx';
 import { motion, AnimatePresence } from 'motion/react';
 import { format, differenceInDays, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, addDays } from 'date-fns';
 import { clsx, type ClassValue } from 'clsx';
@@ -255,7 +256,7 @@ export default function App() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'home' | 'calendar' | 'settings' | 'dday'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'calendar' | 'settings' | 'dday' | 'invitation'>('home');
   const [todayMemory, setTodayMemory] = useState<Memory | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [calendarMonth, setCalendarMonth] = useState(new Date());
@@ -694,6 +695,10 @@ export default function App() {
           {activeTab === 'dday' && profile && (
             <DDayView profile={profile} />
           )}
+
+          {activeTab === 'invitation' && profile && user && (
+            <WeddingInvitation coupleId={profile.id} user={user} />
+          )}
         </AnimatePresence>
       </main>
 
@@ -715,6 +720,16 @@ export default function App() {
             className="w-13 h-13 bg-btn-primary text-white rounded-full flex items-center justify-center shadow-xl shadow-btn-primary/30 scale-110 active:scale-100 transition-all font-bold"
           >
             <Heart size={24} className="fill-white" />
+          </button>
+
+          <button 
+            onClick={() => setActiveTab('invitation')}
+            className={cn(
+              "w-11 h-11 rounded-full flex items-center justify-center transition-all duration-300",
+              activeTab === 'invitation' ? "bg-btn-primary text-white scale-110" : "bg-app-bg text-text-hint hover:text-btn-secondary"
+            )}
+          >
+            <Mail size={20} />
           </button>
           
           <button 
@@ -807,6 +822,7 @@ export default function App() {
                   <SidebarItem label="Home" sub="Our universe" active={activeTab === 'home'} onClick={() => { setActiveTab('home'); setSidebarOpen(false); }} />
                   <SidebarItem label="D-Day Counter" sub="Anniversaries" active={activeTab === 'dday'} onClick={() => { setActiveTab('dday'); setSidebarOpen(false); }} />
                   <SidebarItem label="Memory Lane" sub="Diary & Photos" active={activeTab === 'calendar'} onClick={() => { setActiveTab('calendar'); setSidebarOpen(false); }} />
+                  <SidebarItem label="Invitation" sub="우리 청첩장" active={activeTab === 'invitation'} onClick={() => { setActiveTab('invitation'); setSidebarOpen(false); }} />
                   <SidebarItem label="Settings" sub="App options" active={activeTab === 'settings'} onClick={() => { setActiveTab('settings'); setSidebarOpen(false); }} />
                 </nav>
 
@@ -1111,30 +1127,86 @@ function MemoryCalendar({ profile, selectedDate, setSelectedDate, currentMonth, 
   setCurrentMonth: (d: Date) => void
 }) {
   const coupleId = profile.id;
-  const [memories, setMemories] = useState<Record<string, Memory>>({});
+  const [calendarMemories, setCalendarMemories] = useState<Record<string, Memory>>({});
+  const [feedMemories, setFeedMemories] = useState<Memory[]>([]);
+  const [lastVisible, setLastVisible] = useState<QueryDocumentSnapshot | null>(null);
+  const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
 
+  const PAGE_SIZE = 5;
+
+  // Real-time listener for ALL memories to show dots on calendar
   useEffect(() => {
-    setLoading(true);
     const q = query(collection(db, 'couples', coupleId, 'memories'));
-    
-    // Real-time listener for ALL memories of this couple
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const mems: Record<string, Memory> = {};
       snapshot.forEach((doc) => {
         const data = doc.data() as Memory;
         mems[data.date] = { id: doc.id, ...data };
       });
-      setMemories(mems);
-      setLoading(false);
+      setCalendarMemories(mems);
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, `couples/${coupleId}/memories (all)`);
-      setLoading(false);
     });
 
     return () => unsubscribe();
   }, [coupleId]);
+
+  const fetchInitialFeed = useCallback(async () => {
+    setLoading(true);
+    try {
+      const q = query(
+        collection(db, 'couples', coupleId, 'memories'),
+        orderBy('date', 'desc'),
+        limit(PAGE_SIZE)
+      );
+      const snapshot = await getDocs(q);
+      
+      const mems = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Memory));
+      setFeedMemories(mems);
+      setLastVisible(snapshot.docs[snapshot.docs.length - 1] || null);
+      setHasMore(snapshot.docs.length === PAGE_SIZE);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.LIST, `couples/${coupleId}/memories (feed-initial)`);
+    } finally {
+      setLoading(false);
+    }
+  }, [coupleId]);
+
+  // Initial fetch for the paginated feed
+  useEffect(() => {
+    fetchInitialFeed();
+  }, [fetchInitialFeed]);
+
+  const loadMore = async () => {
+    if (!lastVisible || loadingMore || !hasMore) return;
+
+    setLoadingMore(true);
+    try {
+      const q = query(
+        collection(db, 'couples', coupleId, 'memories'),
+        orderBy('date', 'desc'),
+        startAfter(lastVisible),
+        limit(PAGE_SIZE)
+      );
+      const snapshot = await getDocs(q);
+      
+      const newMems = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Memory));
+      if (newMems.length > 0) {
+        setFeedMemories(prev => [...prev, ...newMems]);
+        setLastVisible(snapshot.docs[snapshot.docs.length - 1]);
+        setHasMore(snapshot.docs.length === PAGE_SIZE);
+      } else {
+        setHasMore(false);
+      }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.LIST, `couples/${coupleId}/memories (feed-more)`);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   const daysInMonth = eachDayOfInterval({
     start: startOfMonth(currentMonth),
@@ -1167,7 +1239,7 @@ function MemoryCalendar({ profile, selectedDate, setSelectedDate, currentMonth, 
         {blanks.map(b => <div key={`blank-${b}`} />)}
         {daysInMonth.map(day => {
           const dateStr = format(day, 'yyyy-MM-dd');
-          const hasMemory = !!memories[dateStr];
+          const hasMemory = !!calendarMemories[dateStr];
           const isSelected = selectedDate && isSameDay(day, selectedDate);
           const isToday = isSameDay(day, new Date());
 
@@ -1218,7 +1290,8 @@ function MemoryCalendar({ profile, selectedDate, setSelectedDate, currentMonth, 
                 <MemoryEditor
                   date={format(selectedDate, 'yyyy-MM-dd')}
                   profile={profile}
-                  existingMemory={memories[format(selectedDate, 'yyyy-MM-dd')]}
+                  existingMemory={calendarMemories[format(selectedDate, 'yyyy-MM-dd')]}
+                  onSaveSuccess={fetchInitialFeed}
                 />
               </div>
             </motion.div>
@@ -1234,14 +1307,12 @@ function MemoryCalendar({ profile, selectedDate, setSelectedDate, currentMonth, 
           </div>
           <h3 className="text-xl font-serif italic text-text-primary">Our Memories</h3>
           <div className="ml-auto flex items-center gap-2">
-             <span className="text-[10px] font-black text-text-hint uppercase tracking-widest">{Object.keys(memories).length} Stories</span>
+             <span className="text-[10px] font-black text-text-hint uppercase tracking-widest">{feedMemories.length} Stories Loaded</span>
           </div>
         </div>
 
         <div className="flex-1 overflow-y-auto pr-1 -mr-1 space-y-6 pb-20 no-scrollbar">
-          {(Object.entries(memories) as [string, Memory][])
-            .sort((a, b) => b[0].localeCompare(a[0]))
-            .map(([date, memory]) => (
+          {feedMemories.map((memory) => (
               <motion.div 
                 key={memory.id}
                 layout
@@ -1263,10 +1334,10 @@ function MemoryCalendar({ profile, selectedDate, setSelectedDate, currentMonth, 
                     </div>
                     <div>
                       <p className="text-xs font-black text-text-primary">{memory.authorName || 'Someone'}</p>
-                      <p className="text-[9px] text-text-hint font-bold uppercase tracking-widest">{format(parseISO(date), 'MMMM do, yyyy')}</p>
+                      <p className="text-[9px] text-text-hint font-bold uppercase tracking-widest">{format(parseISO(memory.date), 'MMMM do, yyyy')}</p>
                     </div>
                   </div>
-                  <button onClick={() => setSelectedDate(parseISO(date))} className="p-2 text-text-hint bg-app-bg rounded-xl">
+                  <button onClick={() => setSelectedDate(parseISO(memory.date))} className="p-2 text-text-hint bg-app-bg rounded-xl">
                     <Menu size={16} />
                   </button>
                 </div>
@@ -1281,7 +1352,7 @@ function MemoryCalendar({ profile, selectedDate, setSelectedDate, currentMonth, 
                         </h4>
                       )}
                       {memory.content && (
-                        <p className="text-sm text-text-secondary leading-relaxed px-1 font-medium italic">
+                        <p className="text-sm text-text-secondary leading-relaxed px-1 font-medium italic whitespace-pre-wrap">
                           "{memory.content}"
                         </p>
                       )}
@@ -1325,7 +1396,25 @@ function MemoryCalendar({ profile, selectedDate, setSelectedDate, currentMonth, 
               </motion.div>
             ))}
           
-          {Object.keys(memories).length === 0 && (
+          {hasMore && (
+            <div className="flex justify-center py-4">
+              <button 
+                onClick={loadMore}
+                disabled={loadingMore}
+                className="px-8 py-3 bg-white text-btn-primary border-2 border-border-point rounded-2xl font-bold hover:bg-surface-card transition-all disabled:opacity-50 shadow-sm"
+              >
+                {loadingMore ? '불러오는 중...' : '기존 기록 더 보기'}
+              </button>
+            </div>
+          )}
+
+          {!hasMore && feedMemories.length > 0 && (
+            <div className="text-center py-8 opacity-40">
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-text-hint">All memories loaded</p>
+            </div>
+          )}
+          
+          {feedMemories.length === 0 && !loading && (
             <div className="text-center py-20 bg-white/30 rounded-[40px] border-2 border-dashed border-border-point">
                <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mx-auto mb-4 shadow-sm text-2xl">📸</div>
                <h4 className="text-sm font-bold text-text-primary mb-1">No memories yet</h4>
@@ -1347,7 +1436,12 @@ function MemoryCalendar({ profile, selectedDate, setSelectedDate, currentMonth, 
   );
 }
 
-function MemoryEditor({ date, profile, existingMemory }: { date: string, profile: Profile, existingMemory?: Memory }) {
+function MemoryEditor({ date, profile, existingMemory, onSaveSuccess }: { 
+  date: string, 
+  profile: Profile, 
+  existingMemory?: Memory,
+  onSaveSuccess?: () => void
+}) {
   const coupleId = profile.id;
   const [title, setTitle] = useState(existingMemory?.title || '');
   const [content, setContent] = useState(existingMemory?.content || '');
@@ -1426,6 +1520,7 @@ function MemoryEditor({ date, profile, existingMemory }: { date: string, profile
           });
         }
       }
+      if (onSaveSuccess) onSaveSuccess();
     } catch (e) {
       console.error(e);
       alert('기록 저장 중 오류가 발생했습니다.');
@@ -1466,6 +1561,7 @@ function MemoryEditor({ date, profile, existingMemory }: { date: string, profile
     setSaving(true);
     try {
       await deleteDoc(doc(db, 'couples', coupleId, 'memories', existingMemory.id));
+      if (onSaveSuccess) onSaveSuccess();
     } catch (e) {
       console.error(e);
       alert('삭제 중 오류가 발생했습니다.');

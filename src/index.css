@@ -1,4 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=Dancing+Script:wght@400;700&family=Inter:wght@300;400;500;600&family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500&family=EB+Garamond:wght@400;500&family=Bona+Nova+SC&family=Great+Vibes&display=swap');
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css');
 @import "tailwindcss";
 
 @theme {
@@ -18,6 +20,13 @@
   --color-border-point: #f5d0dc;
   --color-point-lavender: #f5e4f0;
   --color-icon-bg: #f7c5d5;
+
+  /* 청첩장 전용 색 */
+  --color-inv-ink: #2b2b2b;
+  --color-inv-rose: #b4848b;
+  --color-inv-rose-soft: #d8a7ad;
+  --color-inv-gray: #f9f9f9;
+  --color-inv-beige: #f8f5f3;
 }
 
 @layer base {
@@ -51,4 +60,38 @@
 
 .artistic-frame:hover {
   transform: rotate(0deg);
+}
+
+/* ---------- 청첩장 ---------- */
+@font-face {
+  font-family: 'RIDIBatang';
+  src: url('https://fastly.jsdelivr.net/gh/projectnoonnu/noonfonts_twelve@1.0/RIDIBatang.woff') format('woff');
+  font-weight: normal;
+  font-display: swap;
+}
+
+.inv-root { font-family: 'Pretendard Variable', Pretendard, system-ui, sans-serif; color: var(--color-inv-ink); }
+.inv-batang { font-family: 'RIDIBatang', 'Noto Serif KR', serif; }
+.inv-montserrat { font-family: 'Montserrat', sans-serif; }
+.inv-garamond { font-family: 'EB Garamond', serif; }
+.inv-smallcaps { font-family: 'Bona Nova SC', 'EB Garamond', serif; }
+.inv-script { font-family: 'Great Vibes', cursive; }
+
+.inv-petal {
+  position: absolute;
+  top: -20px;
+  background: rgba(255, 255, 255, 0.92);
+  border-radius: 80% 0 80% 0;
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.08);
+  animation-name: inv-fall;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  opacity: 0;
+}
+
+@keyframes inv-fall {
+  0% { transform: translate(0, 0) rotate(0deg); opacity: 0; }
+  10% { opacity: 0.95; }
+  90% { opacity: 0.9; }
+  100% { transform: translate(var(--drift), 760px) rotate(540deg); opacity: 0; }
 }

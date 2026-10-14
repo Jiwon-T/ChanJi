@@ -124,6 +124,43 @@ service cloud.firestore {
         allow delete: if isSignedIn() && isParentMemberLocal(coupleId) && isValidId(anniversaryId);
       }
 
+      // 청첩장 내용: 커플 멤버만 읽고 쓸 수 있음
+      match /invitation/{docId} {
+        allow read: if isSignedIn() && isParentMemberLocal(coupleId);
+        allow write: if isSignedIn() && isParentMemberLocal(coupleId) && docId == 'main' &&
+                        incoming().keys().hasOnly(['content', 'gallery', 'updatedAt']) &&
+                        incoming().content is map &&
+                        incoming().gallery is list && incoming().gallery.size() <= 60 &&
+                        incoming().updatedAt == request.time;
+      }
+
+      // 청첩장 사진 (압축된 data URL): 커플 멤버만 읽고 쓸 수 있음
+      match /invitationPhotos/{photoId} {
+        allow read: if isSignedIn() && isParentMemberLocal(coupleId);
+        allow create, update: if isSignedIn() && isParentMemberLocal(coupleId) && isValidId(photoId) &&
+                                 incoming().keys().hasOnly(['data', 'updatedAt']) &&
+                                 incoming().data is string && incoming().data.size() < 1000000 &&
+                                 incoming().updatedAt == request.time;
+        allow delete: if isSignedIn() && isParentMemberLocal(coupleId);
+      }
+
+      match /guestbook/{entryId} {
+        function isValidGuestbookEntry(data) {
+          return data.keys().hasAll(['name', 'message', 'userId', 'createdAt']) &&
+                 data.keys().size() == 4 &&
+                 data.name is string && data.name.size() > 0 && data.name.size() <= 30 &&
+                 data.message is string && data.message.size() > 0 && data.message.size() <= 500 &&
+                 data.userId is string;
+        }
+
+        allow list: if isSignedIn() && isParentMemberLocal(coupleId);
+        allow create: if isSignedIn() && isParentMemberLocal(coupleId) && isValidId(entryId) &&
+                         isValidGuestbookEntry(incoming()) &&
+                         incoming().userId == request.auth.uid &&
+                         incoming().createdAt == request.time;
+        allow delete: if isSignedIn() && isParentMemberLocal(coupleId) && resource.data.userId == request.auth.uid;
+      }
+
       match /notifications/{notificationId} {
         function isValidNotification(data) {
           return data.keys().hasAll(['type', 'title', 'message', 'userId', 'read', 'createdAt']) &&
