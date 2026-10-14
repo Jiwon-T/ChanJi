@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { addDoc, collection, deleteDoc, doc, onSnapshot, orderBy, query, serverTimestamp } from 'firebase/firestore';
 import { User } from 'firebase/auth';
@@ -9,6 +9,7 @@ import { db, handleFirestoreError, OperationType } from '../lib/firebase.ts';
 import { Account, InvitationContent, dateText, isHoliday, timeLabel } from './data.ts';
 import { useInvitation } from './store.ts';
 import InvitationEditor from './InvitationEditor.tsx';
+import { RibbonOpening } from './RibbonOpening.tsx';
 
 interface GuestbookEntry {
   id: string;
@@ -712,6 +713,9 @@ export default function WeddingInvitation({ coupleId, user }: { coupleId: string
   const { show, node } = useToast();
   const { loading, error, content, gallery, photos } = useInvitation(coupleId);
   const [editing, setEditing] = useState(false);
+  // 청첩장 탭을 열 때마다 리본 오프닝을 한 번 보여 줌
+  const [showOpening, setShowOpening] = useState(true);
+  const closeOpening = useCallback(() => setShowOpening(false), []);
   const ctx = useMemo(() => ({ c: content, photos, gallery }), [content, photos, gallery]);
   const noPhotos = !loading && Object.keys(photos).length === 0;
 
@@ -738,6 +742,9 @@ export default function WeddingInvitation({ coupleId, user }: { coupleId: string
           </div>
         ) : (
           <InvCtx.Provider value={ctx}>
+            {showOpening && (
+              <RibbonOpening groom={content.groom.name} bride={content.bride.name} onDone={closeOpening} />
+            )}
             <button
               onClick={() => setEditing(true)}
               className="absolute top-3 right-3 z-20 inline-flex items-center gap-1 text-[12px] px-3 py-1.5 rounded-full bg-white/90 border border-black/10 text-inv-ink/80 shadow-sm"
