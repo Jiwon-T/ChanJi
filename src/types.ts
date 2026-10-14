@@ -42,4 +42,7 @@ export interface CoupleNotification {
   userId: string;
   read: boolean;
   createdAt: any;
+  // 알림을 눌렀을 때 이동할 기록/기념일 (예전 알림에는 없음)
+  targetDate?: string; // YYYY-MM-DD
+  targetId?: string;
 }

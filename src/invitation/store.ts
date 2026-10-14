@@ -12,6 +12,8 @@ const MAX_DATA_URL_LENGTH = 950_000;
 
 export interface InvitationState {
   loading: boolean;
+  // 불러오기에 실패했을 때의 이유 (권한 없음 등)
+  error: string | null;
   content: InvitationContent;
   gallery: string[];
   photos: Record<string, string>;
@@ -20,6 +22,7 @@ export interface InvitationState {
 export function useInvitation(coupleId: string): InvitationState {
   const [state, setState] = useState<InvitationState>({
     loading: true,
+    error: null,
     content: withDefaults(undefined),
     gallery: [],
     photos: {},
@@ -36,7 +39,11 @@ export function useInvitation(coupleId: string): InvitationState {
         setState((s) => ({ ...s, content: withDefaults(data?.content), gallery: data?.gallery ?? [] }));
         setDocLoaded(true);
       },
-      (err) => handleFirestoreError(err, OperationType.GET, path)
+      (err) => {
+        setState((s) => ({ ...s, error: describeError(err) }));
+        setDocLoaded(true);
+        try { handleFirestoreError(err, OperationType.GET, path); } catch { /* 화면에 안내를 띄웠으므로 무시 */ }
+      }
     );
   }, [coupleId]);
 
@@ -50,11 +57,24 @@ export function useInvitation(coupleId: string): InvitationState {
         setState((s) => ({ ...s, photos }));
         setPhotosLoaded(true);
       },
-      (err) => handleFirestoreError(err, OperationType.LIST, path)
+      (err) => {
+        setState((s) => ({ ...s, error: describeError(err) }));
+        setPhotosLoaded(true);
+        try { handleFirestoreError(err, OperationType.LIST, path); } catch { /* 화면에 안내를 띄웠으므로 무시 */ }
+      }
     );
   }, [coupleId]);
 
   return { ...state, loading: !(docLoaded && photosLoaded) };
+}
+
+function describeError(err: unknown) {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (msg.includes('permission') || msg.includes('PERMISSION')) {
+    return '청첩장을 볼 권한이 없어요. Firebase 콘솔에서 Firestore 보안 규칙(firestore.rules)을 최신으로 배포했는지 확인해 주세요.';
+  }
+  if (msg.includes('offline') || msg.includes('unavailable')) return '인터넷 연결을 확인해 주세요.';
+  return '청첩장을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.';
 }
 
 export async function saveInvitation(coupleId: string, content: InvitationContent, gallery: string[]) {

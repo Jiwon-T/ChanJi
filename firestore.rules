@@ -164,7 +164,9 @@ service cloud.firestore {
       match /notifications/{notificationId} {
         function isValidNotification(data) {
           return data.keys().hasAll(['type', 'title', 'message', 'userId', 'read', 'createdAt']) &&
-                 data.keys().size() == 6 &&
+                 data.keys().hasOnly(['type', 'title', 'message', 'userId', 'read', 'createdAt', 'targetDate', 'targetId']) &&
+                 (!('targetDate' in data) || data.targetDate is string) &&
+                 (!('targetId' in data) || data.targetId is string) &&
                  data.type in ['memory_saved', 'anniversary_added'] &&
                  data.title is string &&
                  data.message is string &&

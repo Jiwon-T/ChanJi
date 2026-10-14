@@ -710,7 +710,7 @@ function Footer({ toast }: { toast: (m: string) => void }) {
 
 export default function WeddingInvitation({ coupleId, user }: { coupleId: string; user: User }) {
   const { show, node } = useToast();
-  const { loading, content, gallery, photos } = useInvitation(coupleId);
+  const { loading, error, content, gallery, photos } = useInvitation(coupleId);
   const [editing, setEditing] = useState(false);
   const ctx = useMemo(() => ({ c: content, photos, gallery }), [content, photos, gallery]);
   const noPhotos = !loading && Object.keys(photos).length === 0;
@@ -721,12 +721,20 @@ export default function WeddingInvitation({ coupleId, user }: { coupleId: string
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="-mx-6 flex justify-center"
+      className="-mx-6 lg:mx-0 flex justify-center lg:pt-2"
     >
       <div className="inv-root relative w-full max-w-[430px] bg-white shadow-xl shadow-divider/40 overflow-hidden">
         {loading ? (
           <div className="py-40 flex justify-center">
             <div className="w-8 h-8 border-2 border-inv-rose-soft border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : error ? (
+          <div className="py-32 px-10 text-center">
+            <p className="text-3xl mb-4">💌</p>
+            <p className="text-[14px] text-inv-ink leading-relaxed">{error}</p>
+            <button onClick={() => window.location.reload()} className="mt-6 px-5 py-2.5 rounded-full border border-black/10 text-[13px] text-inv-ink/80">
+              다시 불러오기
+            </button>
           </div>
         ) : (
           <InvCtx.Provider value={ctx}>
